@@ -82,6 +82,7 @@ make_tmp_files() {                            ; You can also set flag values lik
 ;       - Flags can be set directly by one of the following:
 ;           - obj.Flags := 0x1234
 ;           - obj.FlagStr := "flag_name flag_name ..."
+;           ** WARNING ** DO NOT SET BOTH PROPERTIES - THE BEHAVIOR OF SETTING BOTH IS UNDEFINED
 ;
 ;       - obj.error contains error codes on return.  Non-zero = an error.
 ;       - obj.abort contains abort codes in case of user/system aborting the action.
@@ -166,7 +167,8 @@ class FileOps {
             this.Flags := flags.AllowUndo | flags.SimpleProgress
           , (no_confirm) ? this.Flags := this.Flags | flags.NoConfirmation : ""  ; NoConfirm = Overwrite (mostly)
         
-        If (this.FlagStr) {
+        If (this.FlagStr && this.Flags="") {
+            this.Flags := 0
             arr := StrSplit(this.FlagStr," ")
             For i, _flag in arr
                 If flags.HasProp(_flag)
