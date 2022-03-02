@@ -34,42 +34,45 @@
 ;       
 ; ============================================================
 
-(FileOps) ; Init class for example.  I suggest using #INCLUDE near the top of your script instead.
+; #INCLUDE D:\UserData\AHK\_INCLUDE\_LibraryV2\_JXON.ahk
 
-fso := FileOps()
-q := Chr(34)
+; (FileOps) ; Init class for example.  I suggest using #INCLUDE near the top of your script instead.
 
-Msgbox "Making a temp dir with "              ; Making Temp files
-     . "temp files for testing..."            ; =================
-make_tmp_files()
+; fso := FileOps()
+; fso.FlagStr := "WANTMAPPINGHANDLE"
+; q := Chr(34)
 
-Msgbox "Testing Copy action..."
-fso.Copy("test_dir", "test_dir2")             ; Copy Example
-fso.Copy("test_dir", "test_dir3")             ; --- Setting up move example
-Msgbox "Showcasing confirmation dialog on collision (for copy action)..."
-fso.Copy("test_dir\test_1*", "test_dir2")     ; =================
+; Msgbox "Making a temp dir with "              ; Making Temp files
+     ; . "temp files for testing..."            ; =================
+; make_tmp_files()
 
-Msgbox "Now testing Delete action..."         ; Delete Example
-fso.Flags := 0                                ; --- Without this, files go to the Recycle Bin.
-fso.Delete("test_dir")                        ; =================
+; Msgbox "Testing Copy action..."
+; fso.Copy("test_dir", "test_dir2")             ; Copy Example
+; fso.Copy("test_dir", "test_dir3")             ; --- Setting up move example
+; Msgbox "Showcasing confirmation dialog on collision (for copy action)..."
+; fso.Copy("test_dir\test_1*", "test_dir2")     ; =================
 
-Msgbox "Now testing Move action..."           ; Move Example      ; Acts as "Rename" when dest does not exist.
-fso.Move("test_dir2", "test_dir3")            ; ================= ; Otherwise it moves src dir into dest dir.
-MsgBox "Now test_dir2 is inside test_dir3 folder."
+; Msgbox "Now testing Delete action..."         ; Delete Example
+; fso.Flags := 0                                ; --- Without this, files go to the Recycle Bin.
+; fso.Delete("test_dir")                        ; =================
 
-MsgBox "Now a Rename example."                ; Rename Example
-fso.Rename("test_dir3", "test_dir4")          ; =================
+; Msgbox "Now testing Move action..."           ; Move Example      ; Acts as "Rename" when dest does not exist.
+; fso.Move("test_dir2", "test_dir3")            ; ================= ; Otherwise it moves src dir into dest dir.
+; MsgBox "Now test_dir2 is inside test_dir3 folder.`n`n"
 
-Msgbox "Now cleaning up.`r`n`r`n"             ; Setting manual flag values.
-     . "Nukeing test_dir4."                   ; By default, all deleted files will go to the recycle bin except in
-fso.Flags := 0 ; no AllowUndo, nuke the files ; unusual cases.  If you want notification of these cases then add
-fso.Delete("test_dir4")                       ; the WantNukeWarning flag >> fso.Flags := WantNukeWarning | other_values
+; MsgBox "Now a Rename example."                ; Rename Example
+; fso.Rename("test_dir3", "test_dir4")          ; =================
 
-make_tmp_files() {                            ; You can also set flag values like this:
-    DirCreate("test_dir")                     ; fso.FlagStr := "WantNukeWarning flag_name flag_name ..."
-    Loop 5000                                 ; Take care in the flags that you use AND don't use.
-        FileAppend "test" A_Index, "test_dir\test_" A_Index ".txt"
-}
+; Msgbox "Now cleaning up.`r`n`r`n"             ; Setting manual flag values.
+     ; . "Nukeing test_dir4."                   ; By default, all deleted files will go to the recycle bin except in
+; fso.Flags := 0 ; no AllowUndo, nuke the files ; unusual cases.  If you want notification of these cases then add
+; fso.Delete("test_dir4")                       ; the WantNukeWarning flag >> fso.Flags := WantNukeWarning | other_values
+
+; make_tmp_files() {                            ; You can also set flag values like this:
+    ; DirCreate("test_dir")                     ; fso.FlagStr := "WantNukeWarning flag_name flag_name ..."
+    ; Loop 50                                   ; Take care in the flags that you use AND don't use.
+        ; FileAppend "test" A_Index, "test_dir\test_" A_Index ".txt"
+; }
 
 ; ============================================================
 ; FileOps class
@@ -86,21 +89,43 @@ make_tmp_files() {                            ; You can also set flag values lik
 ;
 ;       - obj.error contains error codes on return.  Non-zero = an error.
 ;       - obj.abort contains abort codes in case of user/system aborting the action.
+;
+;       - obj.NameMappings contains a Map() of any files renamed on collison.
+;         This requires that the following flags be set:
+;               RENAMEONCOLLISION
+;               WANTMAPPINGHANDLE
+;
+;         You can check for name mappings like this:
+;
+;               If obj.NameMappings.Count
+;                   ; ... do stuff
+;
+;         You can iterate through the list like this:
+;
+;               For oldPath, newPath in obj.NameMappings {
+;                   ; ... do stuff
+;               }
+;
 ; ============================================================
 
 class FileOps {
-    Static hwnd := 0
+    Static hwnd := 0     ; SHFILEOPSTRUCT
          , wFunc         := (A_PtrSize=4) ? 4  : 8
          , From          := (A_PtrSize=4) ? 8  : 16
          , To            := (A_PtrSize=4) ? 12 : 24
          , Flags         := (A_PtrSize=4) ? 16 : 32
-         , AnyOpsAbort   := (A_PtrSize=4) ? 20 : 36
-         , NameMappings  := (A_PtrSize=4) ? 24 : 40
-         , ProgressTitle := (A_PtrSize=4) ? 28 : 48
+         , AnyOpsAbort   := (A_PtrSize=4) ? 18 : 36
+         , NameMappings  := (A_PtrSize=4) ? 22 : 40
+         , ProgressTitle := (A_PtrSize=4) ? 26 : 48
     
     Static u := StrLen(Chr(0xFFFF)) ; IsUnicode
          , _func := (this.u) ? "SHFileOperationW" : "SHFileOperationA"
          , fo := {Move:1, Copy:2, Delete:3, Rename:4}
+    
+    Static oldPath := 0 ; SHNAMEMAPPING
+         , newPath := (A_PtrSize=4) ? 4 : 8
+         , opcc    := (A_PtrSize=4) ? 8 : 16
+         , npcc    := (A_PtrSize=4) ? 12 : 20
     
     ; Static LongPaths := RegRead("HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\FileSystem","LongPathsEnabled") ; maybe...
     
@@ -143,7 +168,8 @@ class FileOps {
                 throw Error("Invalid parameters.",, msg1)
             Else If  (Type(p[1]) != "String")
                 throw Error("Invalid parameter type.",, msg2)
-            
+        
+        this.nameMappings := Map()
         this.Operation(name, p)
     }
     
@@ -188,6 +214,8 @@ class FileOps {
         
         this.error := DllCall("shell32\" FileOps._func, "UPtr", obj.ptr)    ; store error code
         this.abort := obj.AnyOpsAbort                                       ; store abort code
+        this.GetNameMappings(obj.NameMappings)
+        msgbox jxon_dump(this.NameMappings,4)
         
         this.Flags := "", this.FlagStr := "", this.Title := "" ; reset flags after operation
         return !this.error
@@ -231,55 +259,48 @@ class FileOps {
         
         return buf
     }
+    GetNameMappings(ptr) {
+        this.NameMappings := Map()
+        If ptr && (count := NumGet(ptr,"UPtr")) {
+            nm := FileOps.SHNAMEMAPPING(NumGet(ptr,A_PtrSize,"UPtr"))
+            Loop count
+                this.NameMappings[nm.oldPath] := nm.newPath, nm.ptr += nm.size
+            r := DllCall("shell32\SHFreeNameMappings","UPtr",ptr) ; 
+        }
+    }
     
     class SHFILEOPSTRUCT {
         __New() {
-            this.struct := Buffer((A_PtrSize=4)?32:56, 0)
+            fo := FileOps
+            this.struct := Buffer((A_PtrSize=4)?30:56, 0)
             this.MkStr := FileOps.Prototype.MkStr
+            
+            this.DefineProp("ptr",{Get:(*)=>this.struct.ptr})
+            list := Map("hwnd","UPtr","wFunc","UInt","From","UPtr","To","UPtr","Flags","UShort","AnyOpsAbort","Int","NameMappings","UPtr")
+            For _name, _type in list
+                this.DefineProp(_name,{Get:this._get.Bind(,FileOps.%_name%,_type), Set:this._set.Bind(,FileOps.%_name%,_type)})
         }
-        ptr {
-            get => this.struct.ptr
-        }
-        hwnd {
-            get => NumGet(this.struct, FileOps.hwnd, "UPtr")
-            set => NumPut("UPtr", value, this.struct, FileOps.hwnd)
-        }
-        wFunc {
-            get => NumGet(this.struct, FileOps.wFunc, "UInt")
-            set => NumPut("UInt", value, this.struct, FileOps.wFunc)
-        }
-        From {
-            get => NumGet(this.struct, FileOps.From, "UPtr")
-            set => NumPut("UPtr", value, this.struct, FileOps.From)
-        }
-        To {
-            get => NumGet(this.struct, FileOps.To, "UPtr")
-            set => NumPut("UPtr", value, this.struct, FileOps.To)
-        }
-        Flags {
-            get => NumGet(this.struct, FileOps.Flags, "UShort")
-            set => NumPut("UShort", value, this.struct, FileOps.Flags)
-        }
-        AnyOpsAbort {
-            get => NumGet(this.struct, FileOps.AnyOpsAbort, "Int")
-            set => NumPut("Int", value, this.struct, FileOps.AnyOpsAbort)
-        }
-        NameMappings {
-            get => NumGet(this.struct, FileOps.NameMappings, "UPtr")
-            set => NumPut("UPtr", value, this.struct, FileOps.NameMappings)
-        }
+        _get(offset,_type) => NumGet(this.struct, offset, _type)
+        _set(offset,_type,value) => NumPut(_type, value, this.struct, offset)
+        
         ProgressTitle { ; this doesn't work as hoped.
-            get {
-                If (ptr := NumGet(this.struct, FileOps.ProgressTitle, "UPtr"))
-                    return StrGet(ptr)
-                Else
-                    return ""
-            }
+            get => (ptr := NumGet(this.struct, FileOps.ProgressTitle, "UPtr")) ? StrGet(ptr) : ""
             set {
                 this.titleBuf := this.MkStr(value, false)
                 NumPut("UPtr", this.titleBuf.ptr, this.struct, FileOps.ProgressTitle)
             }
         }
+    }
+    
+    class SHNAMEMAPPING {
+        __New(ptr:=0) {
+            this.size := (A_PtrSize=4) ? 16 : 24
+            this.ptr := ptr
+            this.DefineProp("opcc",{Get:(*)=>NumGet(this.ptr, FileOps.opcc, "Int")})
+            this.DefineProp("npcc",{Get:(*)=>NumGet(this.ptr, FileOps.npcc, "Int")})
+        }
+        oldPath => StrGet(NumGet(this.ptr,FileOps.oldPath,"UPtr"), this.opcc)
+        newPath => StrGet(NumGet(this.ptr,FileOps.newPath,"UPtr"), this.npcc)
     }
 }
 
@@ -309,3 +330,8 @@ class FileOps {
 
 ; msgbox "size: " sz "`r`n"
      ; . "test: " StrGet(buf)
+
+; dbg(_in) { ; AHK v2
+    ; Loop Parse _in, "`n", "`r"
+        ; OutputDebug "AHK: " A_LoopField
+; }
