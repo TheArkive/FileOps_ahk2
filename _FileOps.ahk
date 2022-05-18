@@ -215,7 +215,7 @@ class FileOps {
         this.error := DllCall("shell32\" FileOps._func, "UPtr", obj.ptr)    ; store error code
         this.abort := obj.AnyOpsAbort                                       ; store abort code
         this.GetNameMappings(obj.NameMappings)
-        msgbox jxon_dump(this.NameMappings,4)
+        ; msgbox jxon_dump(this.NameMappings,4)
         
         this.Flags := "", this.FlagStr := "", this.Title := "" ; reset flags after operation
         return !this.error
